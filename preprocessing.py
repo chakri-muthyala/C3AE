@@ -141,11 +141,11 @@ if __name__ == '__main__':
     ackQ = Queue()
     
     threads = []
-    process_threads = 0
+    process_threads = 0 #for no. of gpus
     for i in range(process_threads):
         threads.append(threading.Thread(target=sample_consumer, args=(i,)))
 
-    process_threads = 15
+    process_threads = 15 # for no. of cpus
     for i in range(process_threads):
         threads.append(threading.Thread(target=sample_consumer, args=(0, i, False)))
     
