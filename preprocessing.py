@@ -145,7 +145,7 @@ if __name__ == '__main__':
     for i in range(process_threads):
         threads.append(threading.Thread(target=sample_consumer, args=(i,)))
 
-    process_threads = 15 # for no. of cpus
+    process_threads = 15 # for no. of cpus 
     for i in range(process_threads):
         threads.append(threading.Thread(target=sample_consumer, args=(0, i, False)))
     
@@ -182,3 +182,21 @@ if __name__ == '__main__':
         
     POISONPILL = True
     print('fucking DONE!!')
+
+
+
+
+'''
+    Git Verification
+    Generate Keys
+        gpg --default-new-key-algo rsa4096 --gen-key
+        gpg --list-secret-keys --keyid-format LONG
+        gpg --armor --export 3AA5C34371567BD2
+            # Prints the GPG key ID, in ASCII armor format
+            
+        git commit -S -m "msg"
+        
+        git config user.signingkey ED5CDE14(with my key) 
+        git config  commit.gpgsign true
+        
+'''
