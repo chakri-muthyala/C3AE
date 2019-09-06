@@ -62,57 +62,54 @@ def sample_consumer(gpu_id, cpu_id=0, use_gpu=True):
     
     # image_path = os.path.join(self.data_dir, series.full_path[0])
     while True:
+        if POISONPILL:
+            break
         obj = dQ.get()
         image_path = obj['full_path']
-        try:
-            print(image_path)
-            image = cv2.imread(image_path, cv2.IMREAD_COLOR)
-            if not np.isnan(obj['second_face_score']):
-                raise Exception("more than one face~---%s"%(image_path))
-            
-            ret = detector.detect_face(image) 
-            if not ret:
-                raise Exception("cant detect facei: %s"%image_path)
-            bounds, lmarks = ret
-            if len(bounds) > 1:
-                raise Exception("more than one face %s"%image_path)
-            
-            crops = detector.extract_image_chips(image, lmarks, padding=0.4)  # aligned face with padding 0.4 in papper
+        image = cv2.imread(image_path, cv2.IMREAD_COLOR)
+        if not np.isnan(obj['second_face_score']):
+            continue
         
-            if len(crops) == 0:
-                raise Exception("no crops~~ %s"%(image_path))
-            if len(crops) > 1:
-                raise Exception("more than one face~---%s"%(image_path))
-            
-            ret = detector.detect_face(crops[0]) 
-            if not ret:
-                raise Exception("cant detect facei: %s"%image_path)
-            bounds, lmarks = ret
-            if len(bounds) > 1:
-                raise Exception("more than one face %s"%image_path)
-            
-            org_box, first_lmarks = bounds[0], lmarks[0]
-            trible_box = gen_boundbox(org_box, first_lmarks)
-            pitch, yaw, roll = get_rotation_angle(crops[0], first_lmarks) # gen face rotation for filtering
-            image = crops[0]   # select the first align face and replace
+        ret = detector.detect_face(image) 
+        if not ret:
+            continue
+        bounds, lmarks = ret
+        if len(bounds) > 1:
+            continue
         
-            series = {}
-            series["age"] = obj["age"]
-            series["gender"] = obj["gender"]
+        crops = detector.extract_image_chips(image, lmarks, padding=0.4)  # aligned face with padding 0.4 in papper
+    
+        if len(crops) == 0:
+            continue
+        if len(crops) > 1:
+            continue
+        
+#        ret = detector.detect_face(crops[0]) 
+#        if not ret:
+#            raise Exception("cant detect facei: %s"%image_path)
+#        bounds, lmarks = ret
+#        if len(bounds) > 1:
+#            raise Exception("more than one face %s"%image_path)
+        
+        org_box, first_lmarks = bounds[0], lmarks[0]
+        trible_box = gen_boundbox(org_box, first_lmarks)
+        pitch, yaw, roll = get_rotation_angle(crops[0], first_lmarks) # gen face rotation for filtering
+        image = crops[0]   # select the first align face and replace
+    
+        series = {}
+        series["age"] = obj["age"]
+        series["gender"] = obj["gender"]
 
-            status, buf = cv2.imencode(".jpg", image)
-            series["image"] = buf.tostring() 
-            series["org_box"] = org_box.dumps()  # xmin, ymin, xmax, ymax
-            series["landmarks"] = first_lmarks.dumps()  # y1..y5, x1..x5
-            series["trible_box"] = trible_box.dumps() 
-            series["yaw"] = yaw
-            series["pitch"] = pitch
-            series["roll"] = roll
-            
-            collectQ.put(series)
-        except Exception as ee:
-            print(ee)
-            pass
+        status, buf = cv2.imencode(".jpg", image)
+        series["image"] = buf.tostring() 
+        series["org_box"] = org_box.dumps()  # xmin, ymin, xmax, ymax
+        series["landmarks"] = first_lmarks.dumps()  # y1..y5, x1..x5
+        series["trible_box"] = trible_box.dumps() 
+        series["yaw"] = yaw
+        series["pitch"] = pitch
+        series["roll"] = roll
+        collectQ.put(series)
+        print('sent to collectq')
     ackQ.put('ok')
 
 def distributor(mat_path = 'dataset/wiki_crop/wiki.mat', name='wiki', nums=-1):
@@ -129,53 +126,59 @@ def distributor(mat_path = 'dataset/wiki_crop/wiki.mat', name='wiki', nums=-1):
     dataset = dataset[dataset.gender != np.nan]
     dataset = dataset[np.isnan(dataset.second_face_score)]
     
+    sample = dict(dataset.iloc[0])
+    sample['full_path'] = 'dataset/wiki_crop/' + sample['full_path'][0]
+    print(sample['full_path'])
+    
     for i in range(len(dataset)):
         sample = dict(dataset.iloc[i])
         sample['full_path'] = 'dataset/wiki_crop/' + sample['full_path'][0]
         dQ.put(sample)
     
-    
 if __name__ == '__main__':
     dQ = Queue()
     collectQ = Queue()
-    ackQ = Queue
+    ackQ = Queue()
     
     threads = []
-    process_threads = 4
+    process_threads = 0
     for i in range(process_threads):
         threads.append(threading.Thread(target=sample_consumer, args=(i,)))
 
-    process_threads = 4
+    process_threads = 15
     for i in range(process_threads):
         threads.append(threading.Thread(target=sample_consumer, args=(0, i, False)))
     
-    dThread = threading.Thread(target=distributor, args=('dataset/wiki_crop/wiki.mat', 'wiki', -1))
-    dThread.start()
-    
     for i in range(len(threads)):
+        threads[i].daemon = True
         threads[i].start()
+        
+    dThread = threading.Thread(target=distributor, args=('dataset/wiki_crop/wiki.mat', 'wiki', -1))
+    dThread.daemon = True
+    dThread.start()
     
     #Thread watcher
     pickle_list = []
     ack_vars = []
     while True:
-        if collectQ.empty():
-            continue
-        obj = collectQ.get()
-        pickle_list.append(obj)
-        if ackQ.empty():
-            continue
-        ack_vars.append(ackQ.get())
-        if len(ack_vars)==len(threads):
-            break
-        
-        
-
-    
+        try:
+            obj = collectQ.get()
+            pickle_list.append(obj)
+            if not ackQ.empty():
+                awr = ackQ.get()
+                ack_vars.append(awr)
+            if len(ack_vars)==len(threads):
+                break
+            print('len_ack_vars', len(ack_vars))
+            print('pickle_list_count', len(pickle_list))
+        except Exception as e:
+            print(e)
+            
     import pickle
     pickle_df = pd.DataFrame(pickle_list)
-    PIK = "pickle_df.dat"
+    PIK = "pickle_df_ake.dat"
     with open(PIK, "wb") as f:
         pickle.dump(pickle_df, f)
         
-
+    POISONPILL = True
+    print('fucking DONE!!')
