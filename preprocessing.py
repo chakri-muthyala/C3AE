@@ -199,4 +199,7 @@ if __name__ == '__main__':
         git config user.signingkey ED5CDE14(with my key) 
         git config  commit.gpgsign true
         
+        git config --global user.signingkey ED5CDE14(with my key) 
+        git config --global commit.gpgsign true
+        
 '''
