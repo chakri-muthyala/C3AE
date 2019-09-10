@@ -7,7 +7,7 @@ Created on Fri Aug 30 15:28:13 2019
 """
 
 # Multi-proocess and multi-gpu
-
+import time
 import mxnet as mx
 from scipy.io import loadmat
 from datetime import datetime
@@ -53,64 +53,78 @@ def gen_boundbox(box, landmark):
         [(nose_x - w//2, nose_y - w//2), (nose_x + w//2, nose_y + w//2)]  # outer box
     ])
 
+    
 
 def sample_consumer(gpu_id, cpu_id=0, use_gpu=True):
+    print(gpu_id, cpu_id, use_gpu)
     if use_gpu:
         detector = MtcnnDetector(model_folder=None, ctx=mx.gpu(gpu_id), num_worker=1, minsize=50, accurate_landmark=True)
     else:
         detector = MtcnnDetector(model_folder=None, ctx=mx.cpu(cpu_id), num_worker=1, minsize=50, accurate_landmark=True)
     
     # image_path = os.path.join(self.data_dir, series.full_path[0])
+    pitch = True
     while True:
         if POISONPILL:
             break
-        obj = dQ.get()
-        image_path = obj['full_path']
-        image = cv2.imread(image_path, cv2.IMREAD_COLOR)
-        if not np.isnan(obj['second_face_score']):
-            continue
+        if not dQ.empty():
+            obj = dQ.get()
+            #print(obj)
+            if type(obj)==type('jc'):
+                if obj=='ACK':
+                    pitch=False
+                    break
+            image_path = obj['full_path']
+            #print(image_path)
+            image = cv2.imread(image_path, cv2.IMREAD_COLOR)
+            if not np.isnan(obj['second_face_score']):
+                continue
+            
+            ret = detector.detect_face(image) 
+            if not ret:
+                continue
+            bounds, lmarks = ret
+            if len(bounds) > 1:
+                continue
+            
+            crops = detector.extract_image_chips(image, lmarks, padding=0.4)  # aligned face with padding 0.4 in paper
+        #    for i in range(10):
+#        sample = dict(dataset.iloc[i])
+#        sample['full_path'] = 'dataset/wiki_crop/' + sample['full_path'][0]
+#        dQ.put(sample)
+            if len(crops) == 0:
+                continue
+            if len(crops) > 1:
+                continue
+            
+    #        ret = detector.detect_face(crops[0]) 
+    #        if not ret:
+    #            raise Exception("cant detect facei: %s"%image_path)
+    #        bounds, lmarks = ret
+    #        if len(bounds) > 1:
+    #            raise Exception("more than one face %s"%image_path)
+            
+            org_box, first_lmarks = bounds[0], lmarks[0]
+            trible_box = gen_boundbox(org_box, first_lmarks)
+            pitch, yaw, roll = get_rotation_angle(crops[0], first_lmarks) # gen face rotation for filtering
+            image = crops[0]   # select the first align face and replace
         
-        ret = detector.detect_face(image) 
-        if not ret:
-            continue
-        bounds, lmarks = ret
-        if len(bounds) > 1:
-            continue
-        
-        crops = detector.extract_image_chips(image, lmarks, padding=0.4)  # aligned face with padding 0.4 in papper
+            series = {}
+            series["age"] = obj["age"]
+            series["gender"] = obj["gender"]
     
-        if len(crops) == 0:
-            continue
-        if len(crops) > 1:
-            continue
-        
-#        ret = detector.detect_face(crops[0]) 
-#        if not ret:
-#            raise Exception("cant detect facei: %s"%image_path)
-#        bounds, lmarks = ret
-#        if len(bounds) > 1:
-#            raise Exception("more than one face %s"%image_path)
-        
-        org_box, first_lmarks = bounds[0], lmarks[0]
-        trible_box = gen_boundbox(org_box, first_lmarks)
-        pitch, yaw, roll = get_rotation_angle(crops[0], first_lmarks) # gen face rotation for filtering
-        image = crops[0]   # select the first align face and replace
-    
-        series = {}
-        series["age"] = obj["age"]
-        series["gender"] = obj["gender"]
-
-        status, buf = cv2.imencode(".jpg", image)
-        series["image"] = buf.tostring() 
-        series["org_box"] = org_box.dumps()  # xmin, ymin, xmax, ymax
-        series["landmarks"] = first_lmarks.dumps()  # y1..y5, x1..x5
-        series["trible_box"] = trible_box.dumps() 
-        series["yaw"] = yaw
-        series["pitch"] = pitch
-        series["roll"] = roll
-        collectQ.put(series)
-        print('sent to collectq')
+            status, buf = cv2.imencode(".jpg", image)
+            series["image"] = buf.tostring() 
+            series["org_box"] = org_box.dumps()  # xmin, ymin, xmax, ymax
+            series["landmarks"] = first_lmarks.dumps()  # y1..y5, x1..x5
+            series["trible_box"] = trible_box.dumps()
+            series["yaw"] = yaw
+            series["pitch"] = pitch
+            series["roll"] = roll
+            collectQ.put(series)
+            #print('sent to collectq')
     ackQ.put('ok')
+    print('Sampler DONE')
 
 def distributor(mat_path = 'dataset/wiki_crop/wiki.mat', name='wiki', nums=-1):
     meta = loadmat(mat_path)
@@ -134,6 +148,13 @@ def distributor(mat_path = 'dataset/wiki_crop/wiki.mat', name='wiki', nums=-1):
         sample = dict(dataset.iloc[i])
         sample['full_path'] = 'dataset/wiki_crop/' + sample['full_path'][0]
         dQ.put(sample)
+    while True: ## Assuming 100 threads at max
+        if POISONPILL:
+            break
+        v = 'ACK'
+        dQ.put(v)
+        time.sleep(100)
+    print('distributor DONE')
     
 if __name__ == '__main__':
     dQ = Queue()
@@ -145,7 +166,7 @@ if __name__ == '__main__':
     for i in range(process_threads):
         threads.append(threading.Thread(target=sample_consumer, args=(i,)))
 
-    process_threads = 15 # for no. of cpus 
+    process_threads = 30 # for no. of cpus 
     for i in range(process_threads):
         threads.append(threading.Thread(target=sample_consumer, args=(0, i, False)))
     
@@ -157,22 +178,30 @@ if __name__ == '__main__':
     dThread.daemon = True
     dThread.start()
     
+#    while True:
+#        if not dQ.empty():
+#            print(dQ.get())
+    #exit()
     #Thread watcher
     pickle_list = []
     ack_vars = []
     while True:
         try:
-            obj = collectQ.get()
-            pickle_list.append(obj)
+            if not collectQ.empty():
+                obj = collectQ.get()
+                pickle_list.append(obj)
             if not ackQ.empty():
                 awr = ackQ.get()
                 ack_vars.append(awr)
             if len(ack_vars)==len(threads):
+                print('broken by len of threads')
                 break
             print('len_ack_vars', len(ack_vars))
             print('pickle_list_count', len(pickle_list))
+            print('CollectQ size', collectQ.qsize())
         except Exception as e:
             print(e)
+        time.sleep(5)
             
     import pickle
     pickle_df = pd.DataFrame(pickle_list)
@@ -181,7 +210,7 @@ if __name__ == '__main__':
         pickle.dump(pickle_df, f)
         
     POISONPILL = True
-    print('fucking DONE!!')
+    print('DONE!!')
 
 
 
@@ -206,3 +235,4 @@ if __name__ == '__main__':
         sfsdf
         
 '''
+
