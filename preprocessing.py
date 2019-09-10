@@ -216,24 +216,5 @@ if __name__ == '__main__':
 
 
 
-'''
-    Git Verification
-    Generate Keys
-        gpg --default-new-key-algo rsa4096 --gen-key
-        gpg --list-secret-keys --keyid-format LONG
-        gpg --armor --export 3AA5C34371567BD2
-            # Prints the GPG key ID, in ASCII armor format
-            
-        git commit -S -m "msg"
-        
-        git config user.signingkey ED5CDE14(with my key) 
-        git config  commit.gpgsign true
-        
-        git config --global user.signingkey ED5CDE14(with my key) 
-        git config --global commit.gpgsign true
-        
-        sfsdfds
-        sfsdf
-        
-'''
+
 
