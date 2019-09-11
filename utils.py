@@ -133,34 +133,4 @@ def data_generator(dataframe, batch_size=32, category=12, interval=10, is_traini
             start += batch_size
             
             
-#if __name__ == '__main__':
-#    dataframe = load_pickle('MORPH.dat')
-#    out = data_generator(dataframe=dataframe, is_training=False)
-#    for yld in out:
-#        p = yld
-#        break
-    
-#batch_size=32
-#category=12
-#interval=10
-#is_training=True
-#dropout=0.
-#    
-#dataframe = load_pickle('MORPH.dat')
-#dataframe = dataframe.reset_index(drop=True)
-#all_nums = len(dataframe)
-#while True:
-#    idxs = np.random.permutation(all_nums)
-#    start = 0
-#    while start + batch_size < all_nums:
-#        candis = dataframe.loc[list(idxs[start:start+batch_size])]
-#        imgs = []
-#        for i in range(len(candis)):
-#            sample = candis.iloc[i]
-#            sample = image_transform(sample)
-#            imgs.append(sample)
-#        imgs = np.array(imgs)
-#        out2 = [candis.age.to_numpy(), np.array([two_point(candis.iloc[i]['age'], category, interval) for i in range(len(candis))])]
-#
-#        print( [imgs[:,0], imgs[:,1], imgs[:,2]], out2)
-#        start += batch_size
+
