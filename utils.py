@@ -125,8 +125,6 @@ def data_generator(dataframe, batch_size=32, category=12, interval=10, is_traini
                 sample = image_transform(sample)
                 imgs.append(sample)
             imgs = np.array(imgs)
-#            print(imgs.shape)
-#            out2 = [candis.age.to_numpy(), np.array(map(lambda x: two_point(x, category, interval), candis.age.to_numpy()))]
             out2 = [candis.age.to_numpy(), np.array([two_point(candis.iloc[i]['age'], category, interval) for i in range(len(candis))])]
 
             yield [imgs[:,0], imgs[:,1], imgs[:,2]], out2
